@@ -1,6 +1,8 @@
 # Build
 /target
+/var
 /Cargo.lock
+/.cargo
 
 # Editors
 .DS_Store

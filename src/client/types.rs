@@ -1,6 +1,6 @@
-use crate::client::connection::TonConnection;
-use crate::config::MAINNET_CONFIG;
 use crate::tl::TonFunction;
+use crate::{client::connection::TonConnection, tl::stack::TvmCell};
+use crate::{config::MAINNET_CONFIG, tl::types::LiteServerInfo};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use lazy_static::lazy_static;
@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 
 use crate::tl::types::{
     AccountAddress, BlockId, BlockIdExt, BlocksAccountTransactionId, BlocksHeader,
-    BlocksMasterchainInfo, BlocksShards, BlocksTransactions, ChainConfigInfo, FullAccountState,
+    BlocksMasterchainInfo, BlocksShards, BlocksTransactions, ConfigInfo, FullAccountState,
     InternalTransactionId, RawFullAccountState, RawTransactions,
 };
 use crate::tl::TonNotification;
@@ -90,10 +90,16 @@ pub trait TonConnectionCallback {
         res: &anyhow::Result<TonResult>,
     ) {
     }
+    fn on_invoke_result_send_error(
+        &self,
+        id: u32,
+        duration: &Duration,
+        res: &anyhow::Result<TonResult>,
+    ) {
+    }
     fn on_notification(&self, notification: &TonNotification) {}
     fn on_invoke_error(&self, id: u32, error: &anyhow::Error) {}
     fn on_tonlib_error(&self, id: &Option<u32>, code: i32, error: &str) {}
-    fn on_invoke_result_send_error(&self, id: u32, res: &anyhow::Result<TonResult>) {}
     fn on_notification_parse_error(&self, error: &anyhow::Error) {}
 }
 
@@ -226,10 +232,55 @@ pub trait TonFunctions {
         }
     }
 
+    async fn smc_load_by_transaction(
+        &self,
+        account_address: &str,
+        transaction_id: &InternalTransactionId,
+    ) -> anyhow::Result<(TonConnection, i64)> {
+        let func = TonFunction::SmcLoadByTransaction {
+            account_address: AccountAddress {
+                account_address: String::from(account_address),
+            },
+            transaction_id: transaction_id.clone(),
+        };
+        let (conn, result) = self.invoke_on_connection(&func).await?;
+        match result {
+            TonResult::SmcInfo(smc_info) => Ok((conn, smc_info.id)),
+            r => Err(anyhow!("Expected SmcInfo, got: {:?}", r)),
+        }
+    }
+
     async fn smc_forget(&self, id: i64) -> anyhow::Result<TonResult> {
         let func = TonFunction::SmcForget { id };
         let result = self.invoke(&func).await?;
         Ok(result)
+    }
+
+    async fn smc_get_code(&self, id: i64) -> anyhow::Result<TvmCell> {
+        let func = TonFunction::SmcGetCode { id: id };
+        let result = self.invoke(&func).await?;
+        match result {
+            TonResult::TvmCell(cell) => Ok(cell),
+            r => Err(anyhow!("Expected TvmCell, got: {:?}", r)),
+        }
+    }
+
+    async fn smc_get_data(&self, id: i64) -> anyhow::Result<TvmCell> {
+        let func = TonFunction::SmcGetData { id: id };
+        let result = self.invoke(&func).await?;
+        match result {
+            TonResult::TvmCell(cell) => Ok(cell),
+            r => Err(anyhow!("Expected TvmCell, got: {:?}", r)),
+        }
+    }
+
+    async fn smc_get_state(&self, id: i64) -> anyhow::Result<TvmCell> {
+        let func = TonFunction::SmcGetState { id: id };
+        let result = self.invoke(&func).await?;
+        match result {
+            TonResult::TvmCell(cell) => Ok(cell),
+            r => Err(anyhow!("Expected TvmCell, got: {:?}", r)),
+        }
     }
 
     async fn get_masterchain_info(&self) -> anyhow::Result<BlocksMasterchainInfo> {
@@ -303,6 +354,15 @@ pub trait TonFunctions {
         }
     }
 
+    async fn lite_server_get_info(&self) -> anyhow::Result<LiteServerInfo> {
+        let func = TonFunction::LiteServerGetInfo {};
+        let result = self.invoke(&func).await?;
+        match result {
+            TonResult::LiteServerInfo(result) => Ok(result),
+            r => Err(anyhow!("Expected LiteServerInfo, got: {:?}", r)),
+        }
+    }
+
     async fn get_block_header(&self, block_id: &BlockIdExt) -> anyhow::Result<BlocksHeader> {
         let func = TonFunction::GetBlockHeader {
             id: block_id.clone(),
@@ -314,12 +374,12 @@ pub trait TonFunctions {
         }
     }
 
-    async fn get_config_param(&self, mode: u32, param: u32) -> anyhow::Result<ChainConfigInfo> {
+    async fn get_config_param(&self, mode: u32, param: u32) -> anyhow::Result<ConfigInfo> {
         let func = TonFunction::GetConfigParam { mode, param };
         let result = self.invoke(&func).await?;
         match result {
-            TonResult::ChainConfigInfo(result) => Ok(result),
-            r => Err(anyhow!("Expected ChainConfigInfo, got: {:?}", r)),
+            TonResult::ConfigInfo(result) => Ok(result),
+            r => Err(anyhow!("Expected ConfigInfo, got: {:?}", r)),
         }
     }
 
